@@ -135,6 +135,7 @@ function ProfileImage({
   fallbackClassName: string
 }) {
   const [failed, setFailed] = useState(false)
+  useEffect(() => setFailed(false), [photoUrl])
   if (photoUrl && !failed) {
     return (
       <img
@@ -1069,9 +1070,13 @@ function App() {
 
         <div className="sidebar-bottom">
           <button className="profile-shortcut" type="button" onClick={() => setActivePage('profile')}>
-            <span className="profile-avatar">{firstName(displayName).slice(0, 1).toUpperCase()}</span>
-            <span><strong>{firstName(displayName)}</strong><small>Dating profile</small></span>
-            <span className="shortcut-chevron">⌄</span>
+            <ProfileImage
+              photoUrl={profilePhotoUrl ?? undefined}
+              initials={firstName(displayName).slice(0, 1).toUpperCase()}
+              className="profile-avatar profile-avatar-image"
+              fallbackClassName="profile-avatar"
+            />
+            <span><strong>{firstName(displayName)}</strong></span>
           </button>
         </div>
       </aside>
@@ -1596,7 +1601,7 @@ function App() {
         <div className="modal-backdrop question-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowPerspectiveQuestion(false) }}>
           <section className="profile-modal question-modal" role="dialog" aria-modal="true" aria-labelledby="question-modal-title">
             <button className="modal-close" type="button" aria-label="Close question" onClick={() => setShowPerspectiveQuestion(false)}><Icon name="x" size={18} /></button>
-            <p className="question-modal-eyebrow">PERSPECTIVE QUESTION</p>
+            {/* <p className="question-modal-eyebrow">PERSPECTIVE QUESTION</p> */}
             <h2 id="question-modal-title">{lightweightPerspectiveQuestion.prompt}</h2>
             <label className="question-modal-slider">
               <input type="range" min="-1" max="1" step="0.5" value={normalizePerspectiveScore(draftPerspectiveScores[lightweightPerspectiveQuestion.id] ?? 0)} onChange={(event) => setDraftPerspectiveScores((current) => ({ ...current, [lightweightPerspectiveQuestion.id]: normalizePerspectiveScore(Number(event.target.value)) }))} />

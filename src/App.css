@@ -207,6 +207,12 @@
   font-size: 13px;
 }
 
+.profile-avatar-image {
+  display: block;
+  overflow: hidden;
+  object-fit: cover;
+}
+
 .profile-shortcut strong {
   font-size: 12px;
 }
