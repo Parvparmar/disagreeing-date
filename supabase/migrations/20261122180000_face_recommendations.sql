@@ -117,6 +117,7 @@ SET search_path = ''
 AS $$
 DECLARE
   candidate_vector extensions.vector(512);
+  scaled_vector extensions.vector(512);
   current_vector extensions.vector(512);
   current_bias double precision := 0;
   current_samples integer := 0;
@@ -148,18 +149,28 @@ BEGIN
 
   target_value := CASE WHEN p_signal = -1 THEN 0.0 ELSE 1.0 END;
   gradient := learning_rate * abs(p_signal)::double precision * (target_value - probability);
+  scaled_vector := extensions.array_to_vector(
+    ARRAY(
+      SELECT component.value * gradient::real
+      FROM unnest(extensions.vector_to_float4(candidate_vector, 512, false))
+        WITH ORDINALITY AS component(value, position)
+      ORDER BY component.position
+    ),
+    512,
+    false
+  );
 
   INSERT INTO public.face_preference_models (user_id, preference_vector, bias, sample_count, updated_at)
   VALUES (
     p_user_id,
-    candidate_vector * gradient,
+    scaled_vector,
     gradient,
     1,
     now()
   )
   ON CONFLICT (user_id) DO UPDATE
-  SET preference_vector = COALESCE(public.face_preference_models.preference_vector, candidate_vector * gradient)
-        + candidate_vector * gradient,
+  SET preference_vector = COALESCE(public.face_preference_models.preference_vector, scaled_vector)
+        OPERATOR(extensions.+) scaled_vector,
       bias = public.face_preference_models.bias + gradient,
       sample_count = public.face_preference_models.sample_count + 1,
       updated_at = now();

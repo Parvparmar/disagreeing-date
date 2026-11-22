@@ -64,10 +64,10 @@ interface RankedCandidate {
 }
 
 const exploreActivities = [
-  { name: 'Coffee', photo: '/coffee.jpg', description: 'Good conversation, one cup at a time.' },
-  { name: 'Party', photo: '/party.jpg', description: 'Meet people and share the energy.' },
-  { name: 'Gym', photo: '/gym.jpg', description: 'Find a little motivation together.' },
-  { name: 'Run', photo: '/run.jpg', description: 'Take the conversation outdoors.' },
+  { name: 'Coffee' },
+  { name: 'Party' },
+  { name: 'Gym' },
+  { name: 'Run' },
 ]
 
 const SUPABASE_CONFIG_ERROR =
@@ -226,7 +226,9 @@ function App() {
   const chatMessagesEndRef = useRef<HTMLDivElement>(null)
   const [selectedMember, setSelectedMember] = useState<CandidateProfile | null>(null)
   const [showPerspectiveQuestion, setShowPerspectiveQuestion] = useState(false)
+  const [flippedActivity, setFlippedActivity] = useState<string | null>(null)
   const [profileReactions, setProfileReactions] = useState<Record<string, 'liked' | 'passed'>>({})
+  const pendingProfileReactions = useRef(new Set<string>())
   const [perspectiveAnswers, setPerspectiveAnswers] = useState<Record<string, number>>({})
   const perspectiveAnswersRef = useRef<Record<string, number>>({})
   const [draftPerspectiveScores, setDraftPerspectiveScores] = useState<Record<string, number>>({})
@@ -536,7 +538,7 @@ function App() {
         neighborhood: profile.neighborhood ?? 'Location not shared',
         childrenPreference: profile.childrenPreference,
         personality: 'Thoughtful and curious',
-        bio: 'A member building a perspective profile.',
+        bio: '',
         photoUrl: profile.photoUrl ?? undefined,
         perspectiveAnswers: profile.perspectiveAnswers,
         personalLikeProbability: profile.personalLikeProbability,
@@ -630,10 +632,13 @@ function App() {
   }
 
   async function reactToProfile(profile: CandidateProfile, reaction: 'liked' | 'passed') {
+    if (pendingProfileReactions.current.has(profile.id)) return
+    pendingProfileReactions.current.add(profile.id)
+    setDiscoveryError(null)
+    setProfileReactions((current) => ({ ...current, [profile.id]: reaction }))
+    setSwipeDragX(0)
     try {
       const result = await recordProfileSwipe(profile.id, reaction === 'liked')
-      setProfileReactions((current) => ({ ...current, [profile.id]: reaction }))
-      setSwipeDragX(0)
       if (result.matched) {
         try {
           setNotifications(await getMyNotifications())
@@ -648,9 +653,17 @@ function App() {
         setDiscoveryError(error instanceof Error ? error.message : 'Could not refresh dating profiles.')
       })
     } catch (error) {
+      setProfileReactions((current) => {
+        if (current[profile.id] !== reaction) return current
+        const next = { ...current }
+        delete next[profile.id]
+        return next
+      })
       setDiscoveryError(
         error instanceof Error ? error.message : 'Could not save your profile reaction.',
       )
+    } finally {
+      pendingProfileReactions.current.delete(profile.id)
     }
   }
 
@@ -1106,8 +1119,36 @@ function App() {
             {discoveryError && <p className="auth-error account-error" role="alert">{discoveryError}</p>}
             <div className="activity-grid">
               {exploreActivities.map((activity) => (
-                <article className={`activity-card activity-${activity.name.toLowerCase()}`} key={activity.name}>
-                  <div><h3>{activity.name}</h3><p>{activity.description}</p></div>
+                <article
+                  className={`activity-card activity-${activity.name.toLowerCase()}${flippedActivity === activity.name ? ' is-flipped' : ''}`}
+                  key={activity.name}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${activity.name}: coming soon`}
+                  aria-expanded={flippedActivity === activity.name}
+                  onMouseLeave={() => {
+                    if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+                      setFlippedActivity((current) => current === activity.name ? null : current)
+                    }
+                  }}
+                  onClick={() => {
+                    setFlippedActivity((current) => current === activity.name ? null : activity.name)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      setFlippedActivity((current) => current === activity.name ? null : activity.name)
+                    }
+                  }}
+                >
+                  <div className="activity-card-inner">
+                    <div className="activity-card-face activity-card-front" aria-hidden={flippedActivity === activity.name}>
+                      <h3>{activity.name}</h3>
+                    </div>
+                    <div className="activity-card-face activity-card-back" aria-hidden={flippedActivity !== activity.name}>
+                      <span>Coming soon</span>
+                    </div>
+                  </div>
                 </article>
               ))}
             </div>
@@ -1116,6 +1157,7 @@ function App() {
 
         {activePage === 'swipe' && (
           <section className="page-view swipe-page">
+            {discoveryError && <p className="auth-error account-error" role="alert">{discoveryError}</p>}
             <p className="swipe-count">{availableCandidates.length} profile{availableCandidates.length === 1 ? '' : 's'} to explore</p>
             {availableCandidates.length === 0 ? (
               <div className="empty-card swipe-empty">
