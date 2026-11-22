@@ -1,6 +1,6 @@
-# PaceMate
+# Opinionated
 
-PaceMate is a mobile-friendly dating discovery app built with React, TypeScript and Vite. It matches people using relationship essentials and an optional perspective profile that grows over time. Supabase provides hosted authentication and Postgres profile storage.
+Opinionated is a mobile-friendly dating discovery app built with React, TypeScript and Vite. It matches people based on topics they disagree on that could lead to interesting (or heated) conversations. Supabase provides hosted authentication and Postgres profile storage.
 
 ## Hosted setup
 
@@ -34,8 +34,9 @@ Production needs no locally hosted API or database. Create a Supabase project an
    - [`supabase/migrations/20261122160000_realtime_messaging.sql`](./supabase/migrations/20261122160000_realtime_messaging.sql)
    - [`supabase/migrations/20261122170000_email_availability_checks.sql`](./supabase/migrations/20261122170000_email_availability_checks.sql)
    - [`supabase/migrations/20261122180000_face_recommendations.sql`](./supabase/migrations/20261122180000_face_recommendations.sql)
+   - [`supabase/migrations/20261122190000_opinionated_branding.sql`](./supabase/migrations/20261122190000_opinionated_branding.sql)
 
-   Apply all twelve in order. The first four establish and migrate the existing profile schema; subsequent migrations add preference storage, dating filters, photos and matches, messaging, email availability, and private face recommendation features.
+   Apply all thirteen in order. The first four establish and migrate the existing profile schema; subsequent migrations add preference storage, dating filters, photos and matches, messaging, email availability, private face recommendation features, and the updated product name.
 
 4. Deploy the account deletion and email availability functions:
 
