@@ -151,7 +151,7 @@ BEGIN
   END;
 
   IF birth_date_value > (CURRENT_DATE - INTERVAL '18 years')::date THEN
-    RAISE EXCEPTION 'PaceMate is for adults 18 and older.';
+    RAISE EXCEPTION 'Opinionated is for adults 18 and older.';
   END IF;
 
   IF intention_value NOT IN ('Friends', 'Dating', 'Both') THEN

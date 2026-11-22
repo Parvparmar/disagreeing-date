@@ -1,6 +1,6 @@
 {
-  "name": "PaceMate",
-  "short_name": "PaceMate",
+  "name": "Opinionated",
+  "short_name": "Opinionated",
   "description": "Find compatible running partners, friends, and training matches.",
   "start_url": "/",
   "display": "standalone",

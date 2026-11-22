@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import os
 import uuid
+import hmac
+import asyncio
 from functools import lru_cache
 from datetime import datetime, timezone
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlparse
 
 import cv2
 import httpx
 import numpy as np
+import onnxruntime as ort
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -18,11 +21,12 @@ from insightface.app import FaceAnalysis
 SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_PUBLISHABLE_KEY") or os.environ["SUPABASE_ANON_KEY"]
 SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY") or os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+FACE_BACKFILL_TOKEN = os.environ.get("FACE_BACKFILL_TOKEN", "")
 MODEL_NAME = os.environ.get("FACE_MODEL_NAME", "buffalo_l")
 MIN_FACE_SIDE = int(os.environ.get("MIN_FACE_SIDE", "64"))
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
-app = FastAPI(title="PaceMate private face feature service", version="1.0.0")
+app = FastAPI(title="Opinionated private face feature service", version="1.0.0")
 allowed_origins = [
     origin.strip()
     for origin in os.environ.get("FRONTEND_ORIGINS", "http://localhost:4173,http://127.0.0.1:4173").split(",")
@@ -44,12 +48,14 @@ class IndexPhotoRequest(BaseModel):
 
 @lru_cache(maxsize=1)
 def face_analyzer() -> FaceAnalysis:
+    if "CUDAExecutionProvider" not in ort.get_available_providers():
+        raise RuntimeError("CUDAExecutionProvider is unavailable; run this service with Docker GPU access enabled.")
     analyzer = FaceAnalysis(
         name=MODEL_NAME,
         allowed_modules=["detection", "recognition"],
-        providers=["CPUExecutionProvider"],
+        providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
-    analyzer.prepare(ctx_id=-1, det_size=(640, 640))
+    analyzer.prepare(ctx_id=0, det_size=(640, 640))
     return analyzer
 
 
@@ -71,13 +77,21 @@ async def authenticated_user_id(authorization: str | None) -> str:
 
 
 async def admin_request(method: str, path: str, **kwargs: object) -> httpx.Response:
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.request(
-            method,
-            f"{SUPABASE_URL}{path}",
-            headers={**headers_for(SUPABASE_SECRET_KEY), **kwargs.pop("headers", {})},
-            **kwargs,
-        )
+    request_headers = {**headers_for(SUPABASE_SECRET_KEY), **kwargs.pop("headers", {})}
+    async with httpx.AsyncClient(timeout=45) as client:
+        for attempt in range(3):
+            try:
+                response = await client.request(
+                    method,
+                    f"{SUPABASE_URL}{path}",
+                    headers=request_headers,
+                    **kwargs,
+                )
+                break
+            except httpx.RequestError as error:
+                if attempt == 2:
+                    raise HTTPException(status_code=502, detail="Could not connect to Supabase. Retry the operation.") from error
+                await asyncio.sleep(0.5 * (attempt + 1))
     if response.is_error:
         raise HTTPException(status_code=502, detail="Private feature storage request failed.")
     return response
@@ -88,24 +102,24 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/v1/photos/index")
-async def index_photo(
-    payload: IndexPhotoRequest,
-    authorization: str | None = Header(default=None),
-) -> dict[str, object]:
-    user_id = await authenticated_user_id(authorization)
+async def process_photo(user_id: str, payload: IndexPhotoRequest, demo_backfill: bool = False) -> dict[str, object]:
     normalized_path = payload.storage_path.strip("/")
-    if normalized_path.split("/", 1)[0] != user_id or ".." in normalized_path.split("/"):
+    path_parts = normalized_path.split("/")
+    owned_path = path_parts[0] == user_id
+    demo_path = len(path_parts) >= 3 and path_parts[0] == "demo" and path_parts[1] == user_id
+    if (not owned_path and not (demo_backfill and demo_path)) or ".." in path_parts:
         raise HTTPException(status_code=403, detail="Photo path is outside your account.")
 
     profile_response = await admin_request(
         "GET",
         "/rest/v1/profiles",
-        params={"user_id": f"eq.{user_id}", "select": "face_learning_consent"},
+        params={"user_id": f"eq.{user_id}", "select": "face_learning_consent,is_demo"},
     )
     profile_rows = profile_response.json()
     if not profile_rows or not profile_rows[0].get("face_learning_consent", False):
         raise HTTPException(status_code=403, detail="Enable private face learning in your profile first.")
+    if demo_backfill and not profile_rows[0].get("is_demo", False):
+        raise HTTPException(status_code=403, detail="Only existing demo profiles can be backfilled.")
 
     image_response = await admin_request(
         "GET",
@@ -202,3 +216,66 @@ async def index_photo(
         "quality_score": round(quality_score, 4),
         "model": MODEL_NAME,
     }
+
+
+@app.post("/v1/photos/index")
+async def index_photo(
+    payload: IndexPhotoRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    user_id = await authenticated_user_id(authorization)
+    return await process_photo(user_id, payload)
+
+
+@app.post("/v1/admin/demo-photos/backfill")
+async def backfill_demo_photos(x_backfill_token: str | None = Header(default=None)) -> dict[str, object]:
+    if not FACE_BACKFILL_TOKEN or not x_backfill_token or not hmac.compare_digest(FACE_BACKFILL_TOKEN, x_backfill_token):
+        raise HTTPException(status_code=401, detail="A valid backfill token is required.")
+
+    profiles_response = await admin_request(
+        "GET",
+        "/rest/v1/profiles",
+        params={
+            "is_demo": "eq.true",
+            "face_learning_consent": "eq.true",
+            "photo_url": "not.is.null",
+            "select": "user_id,photo_url",
+            "limit": "1000",
+        },
+    )
+    indexed_response = await admin_request(
+        "GET",
+        "/rest/v1/profile_face_vectors",
+        params={"select": "user_id", "limit": "1000"},
+    )
+    already_indexed = {row["user_id"] for row in indexed_response.json()}
+    semaphore = asyncio.Semaphore(4)
+
+    async def process_demo_profile(profile: dict[str, str]) -> dict[str, str]:
+        user_id = profile["user_id"]
+        if user_id in already_indexed:
+            return {"user_id": user_id, "status": "already processed"}
+        photo_url = profile.get("photo_url") or ""
+        marker = "/storage/v1/object/public/profile-photos/"
+        parsed_url = urlparse(photo_url)
+        if marker not in parsed_url.path:
+            return {"user_id": user_id, "status": "skipped: unsupported photo URL"}
+        storage_path = unquote(parsed_url.path.split(marker, 1)[1])
+        extension = storage_path.rsplit(".", 1)[-1].lower()
+        mime_type = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}.get(extension)
+        if not mime_type or not storage_path.startswith(f"demo/{user_id}/"):
+            return {"user_id": user_id, "status": "skipped: unsupported photo path or type"}
+        photo_id = uuid.uuid5(uuid.NAMESPACE_URL, photo_url)
+        try:
+            async with semaphore:
+                await process_photo(user_id, IndexPhotoRequest(
+                    photo_id=photo_id, storage_path=storage_path, mime_type=mime_type
+                ), demo_backfill=True)
+            return {"user_id": user_id, "status": "processed"}
+        except HTTPException as error:
+            return {"user_id": user_id, "status": f"failed: {error.detail}"}
+        except Exception:
+            return {"user_id": user_id, "status": "failed: unexpected service error"}
+
+    results = await asyncio.gather(*(process_demo_profile(profile) for profile in profiles_response.json()))
+    return {"count": len(results), "results": results}

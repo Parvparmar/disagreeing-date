@@ -35,8 +35,10 @@ Production needs no locally hosted API or database. Create a Supabase project an
    - [`supabase/migrations/20261122170000_email_availability_checks.sql`](./supabase/migrations/20261122170000_email_availability_checks.sql)
    - [`supabase/migrations/20261122180000_face_recommendations.sql`](./supabase/migrations/20261122180000_face_recommendations.sql)
    - [`supabase/migrations/20261122190000_opinionated_branding.sql`](./supabase/migrations/20261122190000_opinionated_branding.sql)
+   - [`supabase/migrations/20261122200000_demo_face_learning.sql`](./supabase/migrations/20261122200000_demo_face_learning.sql)
+   - [`supabase/migrations/20261123200000_fix_candidate_id_ambiguity.sql`](./supabase/migrations/20261123200000_fix_candidate_id_ambiguity.sql)
 
-   Apply all thirteen in order. The first four establish and migrate the existing profile schema; subsequent migrations add preference storage, dating filters, photos and matches, messaging, email availability, private face recommendation features, and the updated product name.
+   Apply all fifteen in order. The first four establish and migrate the existing profile schema; subsequent migrations add preference storage, dating filters, photos and matches, messaging, email availability, private face recommendation features, the updated product name, face learning for demo profiles, and the recommendation query fix.
 
 4. Deploy the account deletion and email availability functions:
 

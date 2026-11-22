@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pacemater-v4'
+const CACHE_NAME = 'opinionated-v5'
 const ASSETS = ['/', '/index.html', '/manifest.webmanifest']
 
 self.addEventListener('install', (event) => {
@@ -13,7 +13,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((key) => key.startsWith('pacemater-') && key !== CACHE_NAME)
+          .filter((key) => key.startsWith('opinionated-') && key !== CACHE_NAME)
           .map((key) => caches.delete(key)),
       ),
     ),

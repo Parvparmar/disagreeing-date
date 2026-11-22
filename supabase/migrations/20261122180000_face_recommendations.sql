@@ -279,9 +279,9 @@ BEGIN
         WHERE swipe.swiper_id = current_user_id AND swipe.target_user_id = discovery.user_id
       )
   ), my_history AS (
-    SELECT candidate_id, signal::double precision AS signal
-    FROM public.recommendation_interactions
-    WHERE user_id = current_user_id
+    SELECT interaction.candidate_id, interaction.signal::double precision AS signal
+    FROM public.recommendation_interactions AS interaction
+    WHERE interaction.user_id = current_user_id
   ), peer_similarity AS (
     SELECT peer.user_id,
       SUM(mine.signal * peer.signal)::double precision

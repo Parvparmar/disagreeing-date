@@ -934,7 +934,7 @@ function App() {
   async function deleteAccount() {
     if (
       !window.confirm(
-        'Delete your PaceMate account and Supabase profile? This cannot be undone.',
+        'Delete your Opinionated account and Supabase profile? This cannot be undone.',
       )
     ) {
       return
@@ -992,8 +992,8 @@ function App() {
       <div className="landing-page">
         <header className="landing-header">
           <button className="landing-brand" type="button" onClick={() => setActivePage('discover')}>
-            <span className="landing-brand-mark"><Icon name="spark" size={20} /></span>
-            <span>pacemate</span>
+            {/* <span className="landing-brand-mark"><Icon name="spark" size={20} /></span> */}
+            <span>: ( opinionated</span>
           </button>
           <div className="landing-header-actions">
             <button className="landing-signin" type="button" onClick={() => openAuthentication('login')}>Sign in</button>
@@ -1004,12 +1004,13 @@ function App() {
         <main>
           <section className="landing-hero">
             <div className="landing-hero-copy">
-              <div className="landing-eyebrow"><span /> PACEMATE</div>
-              <h1>Meet someone who sees the <em>world</em> a little differently.</h1>
-              <p>Find connection through shared values and fresh perspectives.</p>
-              <div className="landing-hero-actions">
-                <button className="landing-join landing-join-large" type="button" onClick={() => openAuthentication('register')}>Get started <Icon name="arrow" size={16} /></button>
-                {/* <button className="landing-text-link" type="button" onClick={() => openAuthentication('login')}>Sign in</button> */}
+              {/* <div className="landing-eyebrow"><span /> OPINIONATED</div> */}
+              <h1>Disagreements are a part of life.</h1>
+              <div className="landing-hero-bottom">
+                <h3 className="landing-hero-subheading">Can your date handle them well?</h3>
+                <div className="landing-hero-actions">
+                  <button className="landing-join landing-join-large" type="button" onClick={() => openAuthentication('register')}>Get started <Icon name="arrow" size={16} /></button>
+                </div>
               </div>
             </div>
           </section>
@@ -1022,10 +1023,10 @@ function App() {
     <div className={`app-shell ${!accountUser ? 'public-auth-shell' : ''}${activePage === 'swipe' ? ' swipe-active' : ''}`}>
       <aside className="sidebar">
         <button className="brand" type="button" onClick={() => setActivePage('discover')}>
-          <span className="brand-mark"><Icon name="spark" size={21} /></span>
+          {/* <span className="brand-mark"><Icon name="spark" size={21} /></span> */}
           <span>
-            <strong>pacemate</strong>
-            <small>Meet with perspective</small>
+            <strong>:( opinionated</strong>
+            {/* <small>Meet with perspective</small> */}
           </span>
         </button>
 
@@ -1335,7 +1336,7 @@ function App() {
             {accountUser ? (
               <>
                 {authError && <p className="auth-error account-error" role="alert">{authError}</p>}
-                <div className="profile-layout">
+                <div className="profile-layout profile-layout-single">
                   <div className="profile-card perspective-profile-card">
                     <div className="profile-card-header">
                       <div className="profile-avatar-preview">
@@ -1419,11 +1420,6 @@ function App() {
                         <div><dt>Children preference</dt><dd>{childrenPreference ?? 'Not sure'}</dd></div>
                       </dl>
                     )}
-                  </div>
-                  <aside className="privacy-settings-card">
-                    <p>Answers are compared only when both people have responded. Relationship goal and children preference are filters; opinions are never used as hard filters.</p>
-                    <div className="privacy-setting-row"><span>Relationship goal</span><strong>Dating</strong></div>
-                    <div className="privacy-setting-row"><span>Perspective answers</span><strong>{Object.keys(perspectiveAnswers).length} of {perspectiveQuestions.length}</strong></div>
                     <label className="face-learning-consent">
                       <input
                         type="checkbox"
@@ -1432,7 +1428,7 @@ function App() {
                       />
                       <span><strong>Learn my photo preferences</strong><small>Optional. Turn this on before uploading a photo. Private face features personalize recommendations and are never shown on profiles.</small></span>
                     </label>
-                  </aside>
+                  </div>
                 </div>
                 <div className="profile-account-actions">
                   <button className="delete-account-button profile-signout-button" type="button" disabled={authPending} onClick={() => { void signOut() }}>Sign out</button>
@@ -1490,7 +1486,7 @@ function App() {
                             <label>Gender<select value={gender ?? ''} required onChange={(event) => setGender(event.target.value as Gender)}><option value="" disabled>Choose your gender</option><option value="female">Female</option><option value="male">Male</option></select></label>
                             <label>Show me<select value={genderPreference} required onChange={(event) => setGenderPreference(event.target.value as GenderPreference)}><option value="female">Women</option><option value="male">Men</option><option value="both">Everyone</option></select></label>
                             <label>Children preference<select value={childrenPreference ?? 'Not sure'} required onChange={(event) => setChildrenPreference(event.target.value as ChildrenPreference)}><option>Want children</option><option>Open to children</option><option>Don't want children</option><option>Not sure</option></select></label>
-                            <p className="adult-note"><Icon name="check" size={14} /> PaceMate is for adults 18 and older.</p>
+                            <p className="adult-note"><Icon name="check" size={14} /> Opinionated is for adults 18 and older.</p>
                           </div>
                         )}
                         {signupStep >= 4 && (() => {

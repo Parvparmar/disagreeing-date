@@ -1,4 +1,4 @@
-project_id = "pacemater"
+project_id = "opinionated"
 
 [functions.delete-account]
 verify_jwt = true
