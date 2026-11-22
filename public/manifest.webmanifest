@@ -1,0 +1,17 @@
+{
+  "name": "PaceMate",
+  "short_name": "PaceMate",
+  "description": "Find compatible running partners, friends, and training matches.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#dfe0e4",
+  "theme_color": "#0a0f1c",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

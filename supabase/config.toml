@@ -1,0 +1,7 @@
+project_id = "pacemater"
+
+[functions.delete-account]
+verify_jwt = true
+
+[functions.email-available]
+verify_jwt = false
