@@ -420,14 +420,49 @@ export async function getDiscoverableProfiles(): Promise<DiscoverableProfile[]> 
 
   const { data: swipesData, error: swipesError } = await client
     .from('profile_swipes')
-    .select('target_user_id')
+    .select('target_user_id,updated_at')
     .eq('swiper_id', userData.user.id)
   throwOnError(swipesError)
-  const swipes = z.array(z.object({ target_user_id: z.string().uuid() })).safeParse(swipesData)
+  const swipes = z.array(z.object({
+    target_user_id: z.string().uuid(),
+    updated_at: z.string().datetime({ offset: true }),
+  })).safeParse(swipesData)
   if (!swipes.success) {
     throw new SupabaseAccountError('Saved swipe history has an invalid shape.')
   }
-  const swipedProfileIds = new Set(swipes.data.map((swipe) => swipe.target_user_id))
+
+  const { data: deckResetData, error: deckResetError } = await client
+    .from('profile_swipe_deck_resets')
+    .select('reset_at')
+    .eq('user_id', userData.user.id)
+    .maybeSingle()
+  throwOnError(deckResetError)
+  const deckReset = z.object({
+    reset_at: z.string().datetime({ offset: true }),
+  }).nullable().safeParse(deckResetData)
+  if (!deckReset.success) {
+    throw new SupabaseAccountError('Saved deck reset data has an invalid shape.')
+  }
+  const resetAt = deckReset.data ? Date.parse(deckReset.data.reset_at) : null
+  const swipedProfileIds = new Set(swipes.data
+    .filter((swipe) => resetAt === null || Date.parse(swipe.updated_at) > resetAt)
+    .map((swipe) => swipe.target_user_id))
+
+  const { data: matchData, error: matchError } = await client
+    .from('profile_matches')
+    .select('user_one_id,user_two_id')
+    .or(`user_one_id.eq.${userData.user.id},user_two_id.eq.${userData.user.id}`)
+  throwOnError(matchError)
+  const matches = z.array(z.object({
+    user_one_id: z.string().uuid(),
+    user_two_id: z.string().uuid(),
+  })).safeParse(matchData)
+  if (!matches.success) {
+    throw new SupabaseAccountError('Saved matches have an invalid shape.')
+  }
+  const matchedProfileIds = new Set(matches.data.map((match) =>
+    match.user_one_id === userData.user.id ? match.user_two_id : match.user_one_id,
+  ))
 
   const { data: recommendationData, error: recommendationError } = await client
     .rpc('get_my_recommendation_scores')
@@ -479,8 +514,19 @@ export async function getDiscoverableProfiles(): Promise<DiscoverableProfile[]> 
       collaborativeProbability: recommendationByCandidate.get(profile.user_id)?.collaborative_score ?? 0.5,
     }
   }).filter((profile) =>
-    profile.userId === userData.user.id || !swipedProfileIds.has(profile.userId),
+    profile.userId === userData.user.id || (
+      !swipedProfileIds.has(profile.userId) && !matchedProfileIds.has(profile.userId)
+    ),
   )
+}
+
+export async function resetMySwipeDeck(): Promise<number> {
+  const { data, error } = await requireSupabase().rpc('reset_my_swipe_deck')
+  throwOnError(error)
+  if (typeof data !== 'number' || !Number.isInteger(data) || data < 0) {
+    throw new SupabaseAccountError('The swipe deck reset returned an invalid result.')
+  }
+  return data
 }
 
 export function matchesGenderPreference(

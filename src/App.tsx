@@ -14,6 +14,7 @@ import {
   markMyNotificationsRead,
   matchesGenderPreference,
   recordProfileSwipe,
+  resetMySwipeDeck,
   registerAccount,
   saveMyPerspectiveAnswer,
   setMyFaceLearningConsent,
@@ -69,6 +70,26 @@ const exploreActivities = [
   { name: 'Gym' },
   { name: 'Run' },
 ]
+
+const argumentTips = [
+  'Summarize their point before you answer it.',
+  'Ask what experience shaped their view.',
+  'Challenge the idea, not the person.',
+  'Stick to one example at a time.',
+  'Say what evidence could change your mind.',
+  'Separate facts from values and assumptions.',
+  'Aim to understand before trying to persuade.',
+  'It is okay to pause and return to a hard topic later.',
+]
+
+function shuffled<T>(items: T[]): T[] {
+  const result = [...items]
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1))
+    ;[result[index], result[swapIndex]] = [result[swapIndex], result[index]]
+  }
+  return result
+}
 
 const SUPABASE_CONFIG_ERROR =
   'Supabase is not configured. Add the project URL and publishable key to your hosting environment.'
@@ -194,13 +215,11 @@ function rankCandidate(
   const confidence = Math.min(1, sharedQuestions.length / 8)
   const perspectiveScore = intellectualFit * confidence + 0.5 * (1 - confidence)
   const outboundProbability =
-    profile.personalLikeProbability * 0.7 + profile.collaborativeProbability * 0.3
+    profile.personalLikeProbability * 0.85 + profile.collaborativeProbability * 0.15
   const reciprocalProbability = outboundProbability * profile.reverseLikeProbability
-  const matchScore = Math.round(
-    100 * Math.pow(Math.max(0.01, reciprocalProbability), 0.4)
-      * Math.pow(1, 0.3)
-      * Math.pow(Math.max(0.01, perspectiveScore), 0.3),
-  )
+  const matchScore =
+    Math.pow(Math.max(0.01, reciprocalProbability), 0.6)
+      * Math.pow(Math.max(0.01, perspectiveScore), 0.4)
 
   return {
     profile,
@@ -214,6 +233,7 @@ function App() {
   const [displayName, setDisplayName] = useState('You')
   const [activePage, setActivePage] = useState<Page>('swipe')
   const [notice, setNotice] = useState<string | null>(null)
+  const [visibleArgumentTip, setVisibleArgumentTip] = useState<string | null>(null)
   const [showNotifications, setShowNotifications] = useState(false)
   const [notifications, setNotifications] = useState<ProfileNotification[]>([])
   const [notificationError, setNotificationError] = useState<string | null>(null)
@@ -242,6 +262,14 @@ function App() {
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
   const [discoveryProfiles, setDiscoveryProfiles] = useState<DiscoverableProfile[]>([])
   const [discoveryError, setDiscoveryError] = useState<string | null>(null)
+  const [isResettingSwipeDeck, setIsResettingSwipeDeck] = useState(false)
+  const [pendingSwipeSaveCount, setPendingSwipeSaveCount] = useState(0)
+  const [pinnedCandidateIds, setPinnedCandidateIds] = useState<string[]>([])
+  const discoveryRefreshSequence = useRef(0)
+  const swipeSaveQueue = useRef<Promise<void>>(Promise.resolve())
+  const pendingSwipeSaves = useRef(0)
+  const swipeRankingDirty = useRef(false)
+  const swipeRefreshTimer = useRef<number | null>(null)
   const [authStatus, setAuthStatus] = useState<
     'loading' | 'anonymous' | 'authenticated' | 'unavailable' | 'unconfigured'
   >(isSupabaseConfigured ? 'loading' : 'unconfigured')
@@ -271,6 +299,46 @@ function App() {
   useEffect(() => {
     perspectiveAnswersRef.current = perspectiveAnswers
   }, [perspectiveAnswers])
+
+  const argumentTipUserId = accountUser?.id
+  useEffect(() => {
+    if (activePage !== 'messages' || !argumentTipUserId) {
+      setVisibleArgumentTip(null)
+      return
+    }
+
+    const deckKey = `opinionated:argument-tip-deck:${argumentTipUserId}`
+    const lastTipKey = `opinionated:last-argument-tip:${argumentTipUserId}`
+    let deck: string[] = []
+    let lastTip: string | null = null
+    try {
+      const savedDeck = localStorage.getItem(deckKey)
+      const parsedDeck: unknown = savedDeck ? JSON.parse(savedDeck) : []
+      if (Array.isArray(parsedDeck)) {
+        deck = [...new Set(parsedDeck.filter((tip): tip is string =>
+          typeof tip === 'string' && argumentTips.includes(tip),
+        ))]
+      }
+      lastTip = localStorage.getItem(lastTipKey)
+    } catch {
+      deck = []
+    }
+
+    if (deck.length === 0) {
+      deck = shuffled(argumentTips)
+      if (deck.length > 1 && deck[0] === lastTip) {
+        deck.push(deck.shift() as string)
+      }
+    }
+    const tip = deck.shift() ?? argumentTips[0]
+    setVisibleArgumentTip(tip)
+    try {
+      localStorage.setItem(deckKey, JSON.stringify(deck))
+      localStorage.setItem(lastTipKey, tip)
+    } catch {
+      // Continue showing the randomly selected tip when storage is unavailable.
+    }
+  }, [activePage, argumentTipUserId])
 
   useEffect(() => {
     if (!accountUser || activePage !== 'messages') return
@@ -567,9 +635,19 @@ function App() {
         ),
     [candidates, perspectiveAnswers],
   )
-  const availableCandidates = rankedCandidates.filter(
+  const rankedById = new Map(rankedCandidates.map((candidate) => [candidate.profile.id, candidate]))
+  const rankedAvailableCandidates = rankedCandidates.filter(
     ({ profile }) => profileReactions[profile.id] === undefined,
   )
+  const pinnedAvailableCandidates = pinnedCandidateIds.flatMap((id) => {
+    const candidate = rankedById.get(id)
+    return candidate && profileReactions[id] === undefined ? [candidate] : []
+  })
+  const pinnedIds = new Set(pinnedAvailableCandidates.map(({ profile }) => profile.id))
+  const availableCandidates = [
+    ...pinnedAvailableCandidates,
+    ...rankedAvailableCandidates.filter(({ profile }) => !pinnedIds.has(profile.id)),
+  ]
   const unansweredPerspectiveQuestions = perspectiveQuestions.filter(
     (question) => perspectiveAnswers[question.id] === undefined,
   )
@@ -632,27 +710,57 @@ function App() {
     }
   }
 
+  function scheduleSwipeRankingRefresh() {
+    if (swipeRefreshTimer.current !== null) {
+      window.clearTimeout(swipeRefreshTimer.current)
+    }
+    swipeRefreshTimer.current = window.setTimeout(() => {
+      swipeRefreshTimer.current = null
+      if (pendingSwipeSaves.current > 0 || !swipeRankingDirty.current) return
+      swipeRankingDirty.current = false
+      const refreshSequence = ++discoveryRefreshSequence.current
+      void getDiscoverableProfiles().then((profiles) => {
+        if (refreshSequence === discoveryRefreshSequence.current) setDiscoveryProfiles(profiles)
+      }).catch((error: unknown) => {
+        if (refreshSequence === discoveryRefreshSequence.current) {
+          setDiscoveryError(error instanceof Error ? error.message : 'Could not refresh dating profiles.')
+        }
+      })
+    }, 180)
+  }
+
   async function reactToProfile(profile: CandidateProfile, reaction: 'liked' | 'passed') {
     if (pendingProfileReactions.current.has(profile.id)) return
     pendingProfileReactions.current.add(profile.id)
+    pendingSwipeSaves.current += 1
+    setPendingSwipeSaveCount((count) => count + 1)
+    discoveryRefreshSequence.current += 1
+    if (swipeRefreshTimer.current !== null) {
+      window.clearTimeout(swipeRefreshTimer.current)
+      swipeRefreshTimer.current = null
+    }
+    if (availableCandidates[0]?.profile.id === profile.id) {
+      setPinnedCandidateIds(availableCandidates.slice(1, 3).map(({ profile: next }) => next.id))
+    }
     setDiscoveryError(null)
     setProfileReactions((current) => ({ ...current, [profile.id]: reaction }))
     setSwipeDragX(0)
+    const saveRequest = swipeSaveQueue.current.then(
+      () => recordProfileSwipe(profile.id, reaction === 'liked'),
+      () => recordProfileSwipe(profile.id, reaction === 'liked'),
+    )
+    swipeSaveQueue.current = saveRequest.then(() => undefined, () => undefined)
     try {
-      const result = await recordProfileSwipe(profile.id, reaction === 'liked')
+      const result = await saveRequest
+      swipeRankingDirty.current = true
       if (result.matched) {
-        try {
-          setNotifications(await getMyNotifications())
+        void getMyNotifications().then((latestNotifications) => {
+          setNotifications(latestNotifications)
           setNotificationError(null)
-        } catch (error) {
-          setNotificationError(
-            error instanceof Error ? error.message : 'Could not load notifications.',
-          )
-        }
+        }).catch((error: unknown) => {
+          setNotificationError(error instanceof Error ? error.message : 'Could not load notifications.')
+        })
       }
-      void getDiscoverableProfiles().then(setDiscoveryProfiles).catch((error: unknown) => {
-        setDiscoveryError(error instanceof Error ? error.message : 'Could not refresh dating profiles.')
-      })
     } catch (error) {
       setProfileReactions((current) => {
         if (current[profile.id] !== reaction) return current
@@ -660,11 +768,42 @@ function App() {
         delete next[profile.id]
         return next
       })
+      setSwipeDragX(0)
       setDiscoveryError(
         error instanceof Error ? error.message : 'Could not save your profile reaction.',
       )
     } finally {
       pendingProfileReactions.current.delete(profile.id)
+      pendingSwipeSaves.current -= 1
+      setPendingSwipeSaveCount((count) => Math.max(0, count - 1))
+      if (pendingSwipeSaves.current === 0 && swipeRankingDirty.current) {
+        scheduleSwipeRankingRefresh()
+      }
+    }
+  }
+
+  async function resetSwipeDeck() {
+    setIsResettingSwipeDeck(true)
+    setDiscoveryError(null)
+    discoveryRefreshSequence.current += 1
+    try {
+      await swipeSaveQueue.current
+      if (swipeRefreshTimer.current !== null) {
+        window.clearTimeout(swipeRefreshTimer.current)
+        swipeRefreshTimer.current = null
+      }
+      swipeRankingDirty.current = false
+      discoveryRefreshSequence.current += 1
+      await resetMySwipeDeck()
+      setProfileReactions({})
+      setPinnedCandidateIds([])
+      setDiscoveryProfiles(await getDiscoverableProfiles())
+    } catch (error) {
+      setDiscoveryError(
+        error instanceof Error ? error.message : 'Could not reset your Discover deck.',
+      )
+    } finally {
+      setIsResettingSwipeDeck(false)
     }
   }
 
@@ -732,6 +871,7 @@ function App() {
     setProfilePhotoUrl(user.photoUrl)
     setIsEditingProfile(false)
     setProfileReactions({})
+    setPinnedCandidateIds([])
     setSignupStep(0)
     setAuthStatus('authenticated')
   }
@@ -829,7 +969,7 @@ function App() {
         setActivePage('swipe')
       }
       setAuthError(null)
-      setNotice(authMode === 'register' ? 'Your account was created.' : 'You are signed in.')
+      setNotice(authMode === 'register' ? 'Your account was created.' : null)
     } catch (error) {
       const message = error instanceof SupabaseAccountError
         ? error.message
@@ -866,11 +1006,12 @@ function App() {
       setNotifications([])
       setPerspectiveAnswers({})
       setProfileReactions({})
+      setPinnedCandidateIds([])
       setSignupStep(0)
       setIsEditingProfile(false)
       setAuthStatus('anonymous')
       setDisplayName('You')
-      setNotice('You are signed out.')
+      setNotice(null)
     } catch (error) {
       setAuthError(
         error instanceof SupabaseAccountError
@@ -970,6 +1111,7 @@ function App() {
       setGender(null)
       setGenderPreference('both')
       setProfileReactions({})
+      setPinnedCandidateIds([])
       setIsEditingProfile(false)
       setDisplayName('You')
       setAuthStatus('anonymous')
@@ -1118,7 +1260,7 @@ function App() {
             <div className="results-toolbar">
               <div>
                 <h2>Explore activities</h2>
-                <p>Pick a way to meet and make a connection.</p>
+                {/* <p>Pick a way to meet and make a connection.</p> */}
               </div>
             </div>
             {discoveryError && <p className="auth-error account-error" role="alert">{discoveryError}</p>}
@@ -1169,6 +1311,19 @@ function App() {
                 <span className="empty-icon"><Icon name="heart" size={23} /></span>
                 <h3>You&apos;re all caught up</h3>
                 <p>There are no more profiles in this deck. New profiles will appear here when available.</p>
+                <button
+                  className="button button-dark"
+                  type="button"
+                  onClick={() => { void resetSwipeDeck() }}
+                  disabled={isResettingSwipeDeck || pendingSwipeSaveCount > 0}
+                >
+                  {isResettingSwipeDeck
+                    ? 'Resetting…'
+                    : pendingSwipeSaveCount > 0
+                      ? 'Saving swipes…'
+                      : 'Reset my deck'}
+                </button>
+                <p className="swipe-reset-note">Your learned preferences stay saved.</p>
               </div>
             ) : (
               <>
@@ -1206,7 +1361,7 @@ function App() {
                             window.setTimeout(() => { ignoreSwipeClick.current = false }, 0)
                             const reaction = offset > 0 ? 'liked' : 'passed'
                             setSwipeDragX((offset > 0 ? 1 : -1) * Math.max(window.innerWidth, 520))
-                            window.setTimeout(() => { void reactToProfile(profile, reaction) }, 180)
+                            window.setTimeout(() => { void reactToProfile(profile, reaction) }, 240)
                           } else {
                             setSwipeDragX(0)
                           }
@@ -1271,7 +1426,7 @@ function App() {
               <div className="message-empty">
                 <span className="message-empty-icon"><Icon name="message" size={26} /></span>
                 <h2>No conversations yet</h2>
-                <p>When you and another person like each other, your match will appear here.</p>
+                {/* <p>When you and another person like each other, your match will appear here.</p> */}
                 <button className="button button-outline" type="button" onClick={() => setActivePage('discover')}>Explore profiles <Icon name="arrow" size={15} /></button>
               </div>
             ) : (
@@ -1374,6 +1529,12 @@ function App() {
                   )
                 })()}
               </div>
+            )}
+            {visibleArgumentTip && (
+              <aside className="argument-tip" aria-label="A tip for good arguments">
+                <span>PRO TIP</span>
+                <p>{visibleArgumentTip}</p>
+              </aside>
             )}
           </section>
         )}

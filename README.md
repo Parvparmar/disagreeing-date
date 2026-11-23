@@ -39,8 +39,13 @@ Production needs no locally hosted API or database. Create a Supabase project an
    - [`supabase/migrations/20261123200000_fix_candidate_id_ambiguity.sql`](./supabase/migrations/20261123200000_fix_candidate_id_ambiguity.sql)
    - [`supabase/migrations/20261123210000_fix_vector_scalar_type.sql`](./supabase/migrations/20261123210000_fix_vector_scalar_type.sql)
    - [`supabase/migrations/20261123220000_fix_vector_scaling_operator.sql`](./supabase/migrations/20261123220000_fix_vector_scaling_operator.sql)
+   - [`supabase/migrations/20261123230000_swipe_learning_isolation.sql`](./supabase/migrations/20261123230000_swipe_learning_isolation.sql)
+   - [`supabase/migrations/20261123240000_reset_swipe_deck.sql`](./supabase/migrations/20261123240000_reset_swipe_deck.sql)
+   - [`supabase/migrations/20261123250000_preserve_swipe_history_on_reset.sql`](./supabase/migrations/20261123250000_preserve_swipe_history_on_reset.sql)
+   - [`supabase/migrations/20261123260000_stronger_swipe_preference_signals.sql`](./supabase/migrations/20261123260000_stronger_swipe_preference_signals.sql)
+   - [`supabase/migrations/20261123270000_fix_negative_face_preference_signals.sql`](./supabase/migrations/20261123270000_fix_negative_face_preference_signals.sql)
 
-   Apply all seventeen in order. The first four establish and migrate the existing profile schema; subsequent migrations add preference storage, dating filters, photos and matches, messaging, email availability, private face recommendation features, the updated product name, face learning for demo profiles, and recommendation query fixes.
+   Apply all twenty-two in order. The first four establish and migrate the existing profile schema; subsequent migrations add preference storage, dating filters, photos and matches, messaging, email availability, private face recommendation features, the updated product name, face learning for demo profiles, recommendation query fixes, swipe deck reset support that retains swipe history, stronger individual preference learning from likes and passes, and a correction to negative preference signals.
 
 4. Deploy the account deletion and email availability functions:
 
